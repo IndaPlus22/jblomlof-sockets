@@ -22,9 +22,11 @@ use std::time::Duration;
 const SERVER_ADDR: &str = "127.0.0.1:6000";
 
 /* Max message size in characters. */
-const MSG_SIZE: usize = 32;
+const MSG_SIZE: usize = 64;
 
-fn login(ask_for_confirmation: bool) -> Option<(String, String)>{
+//Im to lazy this function was originally to get login,
+//but now its both log in and create user
+fn get_user_name_and_password(ask_for_confirmation: bool) -> Option<(String, String)>{
 
     if ask_for_confirmation {
         let mut input: String = String::new();
@@ -38,21 +40,21 @@ fn login(ask_for_confirmation: bool) -> Option<(String, String)>{
     // This is not secure in anyway but anyways
     // Getting username and password from user
     let mut lines = std::io::stdin().lines();
-    println!("Write your username: (\":cancel\" to stop logging in)");
+    println!("Write your username: (\":cancel\" to stop)");
     let username = lines.next().unwrap().unwrap().trim().to_lowercase();
     if username == ":cancel" {
-        println!("Canceled log in.");
+        println!("Canceled process.");
         return None;
     }
-    println!("Write your password: (\":cancel\" to stop logging in)");
+    println!("Write your password: (\":cancel\" to stop)");
     let password  = lines.next().unwrap().unwrap().trim().to_lowercase();
     if password == ":cancel" {
-        println!("Canceled log in.");
+        println!("Canceled process.");
         return None;
     }
 
     if (!username.is_ascii()) || (!password.is_ascii()) {
-        println!("Failed to log in. Use ascii next time!");
+        println!("Failed process. Use ascii next time!");
         return None;
     }
 
@@ -126,7 +128,7 @@ fn main() {
     });
 
     //ask for login as we start the client
-    if let Some((username, password)) = login(true) {
+    if let Some((username, password)) = get_user_name_and_password(true) {
         if sender.send(format!("/login {} {}", username, password)).is_err() {
             println!("Couldn't establish connection");
             std::process::exit(1)
@@ -150,11 +152,20 @@ fn main() {
                     if message_split.len() == 3 {
                         if sender.send(msg).is_err() {break};
                     } else {
-                        if let Some((username, password)) = login(false) {
+                        if let Some((username, password)) = get_user_name_and_password(false) {
                             if sender.send(format!("/login {} {}", username, password)).is_err() {break};
                         }
                     }
-                },
+                }
+                "/create" => {
+                    if message_split.len() == 3 {
+                        if sender.send(msg).is_err() {break};
+                    } else {
+                        if let Some((username, password)) = get_user_name_and_password(false) {
+                            if sender.send(format!("/create {} {}", username, password)).is_err() {break};
+                        }
+                    }
+                }
 
                 "/ping" => {if sender.send(msg).is_err() {break};},
                 "/aboutme" => {if sender.send(msg).is_err() {break};},

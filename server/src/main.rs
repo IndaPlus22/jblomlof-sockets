@@ -1,3 +1,4 @@
+use std::alloc::System;
 /**
  * Modified chat server example
  * --------
@@ -12,8 +13,9 @@
  */
 use std::io::{ErrorKind, Read, Write};
 use std::net::TcpListener;
-use std::sync::mpsc;
+use std::sync::{mpsc};
 use std::thread;
+
 
 
 mod user;
@@ -22,8 +24,10 @@ mod user;
 const SERVER_ADDR: &str = "127.0.0.1:6000";
 
 /* Max message size in characters. */
-const MSG_SIZE: usize = 32;
+const MSG_SIZE: usize = 64;
 
+/* File where user login is stored */
+const FILE_OF_USERS: &str = "user_file.txt";
 /**
  * Sleep (current thread) for 100 milliseconds.
  */
@@ -53,14 +57,24 @@ fn main() {
     // create channel for communication between threads
     let (sender, receiver) = mpsc::channel::<String>();
 
+    //making a thread to listen to input
+    let _sen = sender.clone();
+    thread::spawn(move || loop {
+        let mut std_input = String::new();
+        std::io::stdin().read_line(&mut std_input).expect("Couldn't read stdin");
+        let command = std_input.trim();
+        if is_command(command) {
+            _sen.send(format!("0:/{}", command)).expect("Couldn't relay message to main.");
+        }
+        sleep();
+    });
+
     loop {
         /* Start listening thread on new connecting client. */
         if let Ok((mut socket, addr)) = server.accept() {
             println!("Client {} connected.", addr);
 
             let _sender = sender.clone();
-
-            println!("{}", user_id);
             users.push(user::User::new(
                 &format!("Guest{}", user_id),
                 user_id,
@@ -104,6 +118,7 @@ fn main() {
         }
 
         /* Broadcast incoming messages. */
+        // and handle admin input from stdin.
         if let Ok(msg) = receiver.try_recv() {
             let msg_split = msg.split_once(':').unwrap();
             let mut username: String = String::from("NaN");
@@ -119,13 +134,8 @@ fn main() {
             if msg_split.1.starts_with('/') {
                 //the message is a command
                 //handle it.
-                if current_index != usize::MAX {
                 handle_command(&mut users, current_index, msg_split.1);
-                } else {
-                    println!("Couldnt do command, got to many USERS!!");
-                }
             } else {
-
                 let correct_msg = format!("{}: {}", username, msg_split.1);
                 // send message to all clients
                 users = users.into_iter().filter_map(|mut user| {
@@ -140,7 +150,7 @@ fn main() {
                     }
                 })
                 .collect::<Vec<_>>();
-            }
+            }     
         }
         // so this is also a cleaner ^^
         // it tries to send messages to clients, if there is an error (when writing) the error is turned to a None
@@ -149,24 +159,123 @@ fn main() {
         sleep();
     }
 
-    fn handle_command(_users: &mut Vec<user::User>, index: usize, command: &str) {
-        let split_commands: Vec<&str> = command.split_whitespace().collect();
-        match split_commands[0] {
-            "/login" => {
-                _users[index].username = split_commands[1].to_string();
-            },
-            "/ping" => {
-                let mut pong = "pong".to_string().into_bytes();
-                pong.resize(MSG_SIZE, 0);
-                _users[index].client.write_all(&pong);
-            },
-            "/aboutme" => {
-                let mut msg = format!("Username: {}, ID: {}", _users[index].username, _users[index].id).into_bytes();
-                msg.resize(MSG_SIZE, 0);
-                _users[index].client.write_all(&msg);
-            }
-            _ => println!("Something went wrong. We need to uptade our list of commands.")
-        }
+}
 
+fn handle_command(_users: &mut Vec<user::User>, index: usize, command: &str) {
+    let split_commands: Vec<&str> = command.split_whitespace().collect();
+    match split_commands[0] {
+        "/login" => {
+            if index >= _users.len() {
+                println!("ABORT COMMAND");
+                return ;
+            }
+            let mut message = {
+                if account_exists(split_commands[1], split_commands[2]).1 {
+                    _users[index].username = split_commands[1].to_string();   
+                    format!("Welcome back {}", _users[index].username) 
+                } else {
+                    "Log in failed. Incorrect username/password.".to_string()
+                }
+            }.into_bytes();
+            message.resize(MSG_SIZE, 0);
+            _users[index].client.write_all(&message);
+        }
+        "/create" => {
+            if index >= _users.len() {
+                println!("ABORT COMMAND");
+                return ;
+            }
+            let mut message = {
+                if account_exists(split_commands[1], "NaN").0 { 
+                    "Account already exists".to_string() 
+                } else {
+                    if create_user(split_commands[1], split_commands[2]){
+                        _users[index].username = split_commands[1].to_string();
+                        format!("Welcome {}. Account created.", _users[index].username)
+                    } else {
+                        "Creation failed. Try again.".to_string()
+                    }
+                }
+            }.into_bytes();
+            message.resize(MSG_SIZE, 0);
+            _users[index].client.write_all(&message);
+        }
+        "/ping" => {
+            if index >= _users.len() {
+                println!("ABORT COMMAND");
+                return ;
+            }
+            let mut pong = "pong".to_string().into_bytes();
+            pong.resize(MSG_SIZE, 0);
+            _users[index].client.write_all(&pong);
+        }
+        "/aboutme" => {
+            if index >= _users.len() {
+                println!("ABORT COMMAND");
+                return ;
+            }
+            let mut msg = format!("Username: {}, ID: {}", _users[index].username, _users[index].id).into_bytes();
+            msg.resize(MSG_SIZE, 0);
+            _users[index].client.write_all(&msg);
+        }
+        "/stop" => {
+            //server wants to shutdown
+            println!("Shutting down...");
+            //for now
+            std::process::exit(0);
+        }
+        _ => println!("Something went wrong. We need to uptade our list of commands.")
     }
+}
+
+fn is_command(command : &str) -> bool {
+    match command {
+        "stop" => true,
+        _ => false
+    }
+    
+}
+
+/**
+ * Returns a tuple
+ * 
+ * (true, true) if account exists and password is correct
+ * 
+ * (true, false) if account only exists
+ * 
+ */
+fn account_exists(_username: &str, _password: &str) -> (bool, bool) {
+    if let Some(contents) = std::fs::read_to_string(FILE_OF_USERS).ok() {
+
+        for line in contents.lines() {
+            for subsection in line.split(';') {
+                let (field, value) = subsection.split_once('=').unwrap_or(("0", "0"));
+                if field == "username" && value == _username{
+                    //found the correct user check for password of this user
+                    for sub in line.split(';') {
+                        let (f, v) = sub.split_once('=').unwrap_or(("0", "0"));
+                        if f == "password" && v == _password {
+                            return (true, true);
+                        }
+                    }
+                    return (true, false);
+                }
+                    
+            }
+        }
+    }
+
+    (false, false)
+}
+
+fn create_user(_username: &str, _password: &str) -> bool {
+    if let Some(mut file) = std::fs::OpenOptions::new().append(true).create(true).open(FILE_OF_USERS).ok() {
+        let line = format!("\nusername={};password={}", _username, _password);
+        let line_utf = line.as_bytes();
+        if file.write_all(line_utf).is_err() {
+            return false;
+        }
+        return true;
+    }
+    false
 }
