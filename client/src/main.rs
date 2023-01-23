@@ -148,6 +148,13 @@ fn main() {
         if msg.starts_with('/') {
             let message_split: Vec<&str> = msg.split_ascii_whitespace().collect();
             match message_split[0] {
+                "/whisper" => {
+                    if message_split.len() >= 3 {
+                        if sender.send(msg).is_err() {break};
+                    } else {
+                        println!("SYSTEM: WRONG FORMAT. USE /whisper <user> <message>");
+                    }
+                }
                 "/login" => {
                     if message_split.len() == 3 {
                         if sender.send(msg).is_err() {break};

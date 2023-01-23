@@ -1,4 +1,3 @@
-use std::alloc::System;
 /**
  * Modified chat server example
  * --------
@@ -164,6 +163,19 @@ fn main() {
 fn handle_command(_users: &mut Vec<user::User>, index: usize, command: &str) {
     let split_commands: Vec<&str> = command.split_whitespace().collect();
     match split_commands[0] {
+        "/whisper" => {
+            for _inner_index in 0.._users.len() {
+                if _users[_inner_index].username == split_commands[1] {
+                    let mut msg = format!("{} whispered: {}", _users[index].username, split_commands[2..split_commands.len()].join(" ")).into_bytes();
+                    msg.resize(MSG_SIZE, 0);
+                    _users[_inner_index].client.write_all(&msg);
+                    return ;
+                }
+            }
+            let mut msg = String::from("Couldn't find user.").into_bytes();
+            msg.resize(MSG_SIZE, 0);
+            _users[index].client.write_all(&msg);
+        }
         "/login" => {
             if index >= _users.len() {
                 println!("ABORT COMMAND");
@@ -221,7 +233,12 @@ fn handle_command(_users: &mut Vec<user::User>, index: usize, command: &str) {
         "/stop" => {
             //server wants to shutdown
             println!("Shutting down...");
-            //for now
+            let mut msg = String::from("Server is closing.").into_bytes();
+            msg.resize(MSG_SIZE, 0);
+            for _user in _users {
+                _user.client.write_all(&msg);
+            }
+            thread::sleep(std::time::Duration::from_secs(3));
             std::process::exit(0);
         }
         _ => println!("Something went wrong. We need to uptade our list of commands.")
