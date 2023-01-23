@@ -62,6 +62,8 @@ fn get_user_name_and_password(ask_for_confirmation: bool) -> Option<(String, Str
 }
 
 fn main() {
+    // calling username info before connection to server.
+    let pre_call_function = get_user_name_and_password(true);
 
     // connect to server
     let mut client = match TcpStream::connect(SERVER_ADDR) {
@@ -128,7 +130,8 @@ fn main() {
     });
 
     //ask for login as we start the client
-    if let Some((username, password)) = get_user_name_and_password(true) {
+    //precalling before server connection. So that it doesn't recieve messages during the function call.
+    if let Some((username, password)) = pre_call_function {
         if sender.send(format!("/login {} {}", username, password)).is_err() {
             println!("SYSTEM: Couldn't send login");
             std::process::exit(1)
@@ -195,10 +198,11 @@ fn check_command(_message: String) -> Option<String>{
         }
 
         //no length checks are needed, since server doesnt do anything with it.
-        "/ping" => {return Some(_message)},
-        "/aboutme" => {return Some(_message)},
+        "/ping" => return Some(_message),
+        "/aboutme" => return Some(_message),
+        "/listall" => return  Some(_message),
 
-        _ => {println!("Unkown command!")}   
+        _ => println!("Unkown command!")   
     }
     None
 }

@@ -38,11 +38,11 @@ fn main() {
     // connect to server
     let server = match TcpListener::bind(SERVER_ADDR) {
         Ok(_client) => {
-            println!("Opened server at: {}", SERVER_ADDR);
+            println!("SERVER: Opened server at: {}", SERVER_ADDR);
             _client
         }
         Err(_) => {
-            println!("Failed to connect to socket at: {}", SERVER_ADDR);
+            println!("SERVER: Failed to connect to socket at: {}", SERVER_ADDR);
             std::process::exit(1)
         }
     };
@@ -63,7 +63,7 @@ fn main() {
         std::io::stdin().read_line(&mut std_input).expect("Couldn't read stdin");
         let command = std_input.trim();
         if is_command(command) {
-            _sen.send(format!("0:/{}", command)).expect("Couldn't relay message to main.");
+            _sen.send(format!("0:/{}", command)).expect("SERVER: Couldn't relay message to main.");
         }
         sleep();
     });
@@ -71,7 +71,7 @@ fn main() {
     loop {
         /* Start listening thread on new connecting client. */
         if let Ok((mut socket, addr)) = server.accept() {
-            println!("Client {} connected.", addr);
+            println!("SERVER: Client {} connected.", addr);
 
             let _sender = sender.clone();
             users.push(user::User::new(
@@ -79,7 +79,7 @@ fn main() {
                 user_id,
                 socket
                     .try_clone()
-                    .expect("Failed to clone client! Client wont receive messages!"),
+                    .expect("SERVER: Failed to clone client! Client wont receive messages!"),
             ));
 
             let user_for_thread = user_id;
@@ -107,7 +107,7 @@ fn main() {
                     Err(ref err) if err.kind() == ErrorKind::WouldBlock => (),
                     // connection error
                     Err(_) => {
-                        println!("Closing connection with: {}", addr);
+                        println!("SERVER: Closing connection with: {}", addr);
                         break;
                     }
                 }
@@ -176,9 +176,19 @@ fn handle_command(_users: &mut Vec<user::User>, index: usize, command: &str) {
             msg.resize(MSG_SIZE, 0);
             _users[index].client.write_all(&msg);
         }
+        "/listall" => {
+            let mut msg = String::from("All users currently online listed:").into_bytes();
+            msg.resize(MSG_SIZE, 0);
+            _users[index].client.write_all(&msg);
+            for _inner_index in 0.._users.len() {
+                msg = _users[_inner_index].username.clone().into_bytes();
+                msg.resize(MSG_SIZE, 0);
+                _users[index].client.write_all(&msg);
+            }
+        }
         "/login" => {
             if index >= _users.len() {
-                println!("ABORT COMMAND");
+                println!("SERVER: ABORT COMMAND");
                 return ;
             }
             let mut message = {
@@ -194,7 +204,7 @@ fn handle_command(_users: &mut Vec<user::User>, index: usize, command: &str) {
         }
         "/create" => {
             if index >= _users.len() {
-                println!("ABORT COMMAND");
+                println!("SERVER: ABORT COMMAND");
                 return ;
             }
             let mut message = {
@@ -214,7 +224,7 @@ fn handle_command(_users: &mut Vec<user::User>, index: usize, command: &str) {
         }
         "/ping" => {
             if index >= _users.len() {
-                println!("ABORT COMMAND");
+                println!("SERVER: ABORT COMMAND");
                 return ;
             }
             let mut pong = "pong".to_string().into_bytes();
@@ -223,7 +233,7 @@ fn handle_command(_users: &mut Vec<user::User>, index: usize, command: &str) {
         }
         "/aboutme" => {
             if index >= _users.len() {
-                println!("ABORT COMMAND");
+                println!("SERVER: ABORT COMMAND");
                 return ;
             }
             let mut msg = format!("Username: {}, ID: {}", _users[index].username, _users[index].id).into_bytes();
@@ -232,16 +242,16 @@ fn handle_command(_users: &mut Vec<user::User>, index: usize, command: &str) {
         }
         "/stop" => {
             //server wants to shutdown
-            println!("Shutting down...");
-            let mut msg = String::from("Server is closing.").into_bytes();
+            println!("SERVER: Shutting down...");
+            let mut msg = String::from("Server is closing. No messages will be sent.").into_bytes();
             msg.resize(MSG_SIZE, 0);
             for _user in _users {
                 _user.client.write_all(&msg);
             }
-            thread::sleep(std::time::Duration::from_secs(3));
+            thread::sleep(std::time::Duration::from_secs(1));
             std::process::exit(0);
         }
-        _ => println!("Something went wrong. We need to uptade our list of commands.")
+        _ => println!("SERVER: Something went wrong. We need to uptade our list of commands.")
     }
 }
 
