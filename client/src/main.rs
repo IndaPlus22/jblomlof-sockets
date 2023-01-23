@@ -30,7 +30,7 @@ fn get_user_name_and_password(ask_for_confirmation: bool) -> Option<(String, Str
 
     if ask_for_confirmation {
         let mut input: String = String::new();
-        println!("Do you want to log in: (y/n)");
+        println!("SYSTEM: Do you want to log in: (y/n)");
         std::io::stdin().lock().read_line(&mut input).expect("Could not read!");
         if input.trim() != "y" {
             return None;
@@ -40,21 +40,21 @@ fn get_user_name_and_password(ask_for_confirmation: bool) -> Option<(String, Str
     // This is not secure in anyway but anyways
     // Getting username and password from user
     let mut lines = std::io::stdin().lines();
-    println!("Write your username: (\":cancel\" to stop)");
+    println!("SYSTEM: Write your username: (\":cancel\" to stop)");
     let username = lines.next().unwrap().unwrap().trim().to_lowercase();
     if username == ":cancel" {
-        println!("Canceled process.");
+        println!("SYSTEM: Canceled process.");
         return None;
     }
-    println!("Write your password: (\":cancel\" to stop)");
+    println!("SYSTEM: Write your password: (\":cancel\" to stop)");
     let password  = lines.next().unwrap().unwrap().trim().to_lowercase();
     if password == ":cancel" {
-        println!("Canceled process.");
+        println!("SYSTEM: Canceled process.");
         return None;
     }
 
     if (!username.is_ascii()) || (!password.is_ascii()) {
-        println!("Failed process. Use ascii next time!");
+        println!("SYSTEM: Failed process. Use ascii next time!");
         return None;
     }
 
@@ -101,7 +101,7 @@ fn main() {
             Err(ref err) if err.kind() == ErrorKind::WouldBlock => (),
             // connection error
             Err(_) => {
-                println!("Lost connection with server!");
+                println!("SYSTEM: Lost connection with server!");
                 break;
             }
         }
@@ -115,7 +115,7 @@ fn main() {
                 msg_buffer.resize(MSG_SIZE, 0);
 
                 if client.write_all(&msg_buffer).is_err() {
-                    println!("Failed to send message!")
+                    println!("SYSTEM: Failed to send message!")
                 }
             }, 
             // no message in channel
@@ -130,7 +130,7 @@ fn main() {
     //ask for login as we start the client
     if let Some((username, password)) = get_user_name_and_password(true) {
         if sender.send(format!("/login {} {}", username, password)).is_err() {
-            println!("Couldn't establish connection");
+            println!("SYSTEM: Couldn't send login");
             std::process::exit(1)
         };
     }
@@ -143,49 +143,62 @@ fn main() {
         // wait for user to write message
         io::stdin().read_line(&mut msg_buffer).expect("Failed to read user message!");
 
-        let msg = msg_buffer.trim().to_string();
+        let mut msg = msg_buffer.trim().to_string();
 
         if msg.starts_with('/') {
-            let message_split: Vec<&str> = msg.split_ascii_whitespace().collect();
-            match message_split[0] {
-                "/whisper" => {
-                    if message_split.len() >= 3 {
-                        if sender.send(msg).is_err() {break};
-                    } else {
-                        println!("SYSTEM: WRONG FORMAT. USE /whisper <user> <message>");
-                    }
-                }
-                "/login" => {
-                    if message_split.len() == 3 {
-                        if sender.send(msg).is_err() {break};
-                    } else {
-                        if let Some((username, password)) = get_user_name_and_password(false) {
-                            if sender.send(format!("/login {} {}", username, password)).is_err() {break};
-                        }
-                    }
-                }
-                "/create" => {
-                    if message_split.len() == 3 {
-                        if sender.send(msg).is_err() {break};
-                    } else {
-                        if let Some((username, password)) = get_user_name_and_password(false) {
-                            if sender.send(format!("/create {} {}", username, password)).is_err() {break};
-                        }
-                    }
-                }
-
-                "/ping" => {if sender.send(msg).is_err() {break};},
-                "/aboutme" => {if sender.send(msg).is_err() {break};},
-
-                _ => {println!("Unkown command!")}
-                
+            //handle command
+            if let Some(_msg)  = check_command(msg) {
+                msg = _msg;
             }
-        } else {
-
-            // quit on message ":quit" or on connection error
-            if msg == ":quit" || sender.send(msg).is_err() {break}
+            else {
+                //command was not valid, dont send to server
+                continue;
+            }
         }
+
+        // quit on message ":quit" or on connection error
+        if msg == ":quit" || sender.send(msg).is_err() {break}        
     }
 
     println!("Closing chat...");
+}
+
+//Returns the valid command. So if the input is already valid, no diff. It can fix a command that is lacking args.
+fn check_command(_message: String) -> Option<String>{
+    
+    let message_split: Vec<&str> = _message.split_ascii_whitespace().collect();
+    match message_split[0] {
+        "/whisper" => {
+            if message_split.len() >= 3 {
+                return Some(_message);
+            } else {
+                println!("SYSTEM: WRONG FORMAT. USE /whisper <user> <message>");
+            }
+        }
+        "/login" => {
+            if message_split.len() == 3 {
+                return Some(_message);
+            } else {
+                if let Some((username, password)) = get_user_name_and_password(false) {
+                    return Some(format!("/login {} {}", username, password));
+                }
+            }
+        }
+        "/create" => {
+            if message_split.len() == 3 {
+                return Some(_message);
+            } else {
+                if let Some((username, password)) = get_user_name_and_password(false) {
+                    return Some(format!("/create {} {}", username, password));
+                }
+            }
+        }
+
+        //no length checks are needed, since server doesnt do anything with it.
+        "/ping" => {return Some(_message)},
+        "/aboutme" => {return Some(_message)},
+
+        _ => {println!("Unkown command!")}   
+    }
+    None
 }
