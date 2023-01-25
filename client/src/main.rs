@@ -32,7 +32,7 @@ fn get_user_name_and_password(ask_for_confirmation: bool) -> Option<(String, Str
         let mut input: String = String::new();
         println!("SYSTEM: Do you want to log in: (y/n)");
         std::io::stdin().lock().read_line(&mut input).expect("Could not read!");
-        if input.trim() != "y" {
+        if input.trim().to_ascii_lowercase() != "y" {
             return None;
         }
     }
@@ -41,14 +41,14 @@ fn get_user_name_and_password(ask_for_confirmation: bool) -> Option<(String, Str
     // Getting username and password from user
     let mut lines = std::io::stdin().lines();
     println!("SYSTEM: Write your username: (\":cancel\" to stop)");
-    let username = lines.next().unwrap().unwrap().trim().to_lowercase();
-    if username == ":cancel" {
+    let username = lines.next().unwrap().unwrap().trim().to_string();
+    if username.to_lowercase() == ":cancel" {
         println!("SYSTEM: Canceled process.");
         return None;
     }
     println!("SYSTEM: Write your password: (\":cancel\" to stop)");
-    let password  = lines.next().unwrap().unwrap().trim().to_lowercase();
-    if password == ":cancel" {
+    let password  = lines.next().unwrap().unwrap().trim().to_string();
+    if password.to_lowercase() == ":cancel" {
         println!("SYSTEM: Canceled process.");
         return None;
     }
@@ -62,7 +62,7 @@ fn get_user_name_and_password(ask_for_confirmation: bool) -> Option<(String, Str
 }
 
 fn main() {
-    // calling username info before connection to server.
+    // getting username info before connection to server.
     let pre_call_function = get_user_name_and_password(true);
 
     // connect to server
@@ -167,6 +167,7 @@ fn main() {
 }
 
 //Returns the valid command. So if the input is already valid, no diff. It can fix a command that is lacking args.
+//Returns None if a non-valid command.
 fn check_command(_message: String) -> Option<String>{
     
     let message_split: Vec<&str> = _message.split_ascii_whitespace().collect();

@@ -12,10 +12,8 @@
  */
 use std::io::{ErrorKind, Read, Write};
 use std::net::TcpListener;
-use std::sync::{mpsc};
+use std::sync::mpsc;
 use std::thread;
-
-
 
 mod user;
 
@@ -60,13 +58,19 @@ fn main() {
     let _sen = sender.clone();
     thread::spawn(move || loop {
         let mut std_input = String::new();
-        std::io::stdin().read_line(&mut std_input).expect("Couldn't read stdin");
+        std::io::stdin()
+            .read_line(&mut std_input)
+            .expect("Couldn't read stdin");
         let command = std_input.trim();
         if is_command(command) {
-            _sen.send(format!("0:/{}", command)).expect("SERVER: Couldn't relay message to main.");
+            _sen.send(format!("0:/{}", command))
+                .expect("SERVER: Couldn't relay message to main.");
         }
         sleep();
     });
+
+    // accessing the file and load the contents to mem
+    let mut file_contents = load_file_data_to_string();
 
     loop {
         /* Start listening thread on new connecting client. */
@@ -133,23 +137,25 @@ fn main() {
             if msg_split.1.starts_with('/') {
                 //the message is a command
                 //handle it.
-                handle_command(&mut users, current_index, msg_split.1);
+                handle_command(&mut users, current_index, msg_split.1, &mut file_contents);
             } else {
                 let correct_msg = format!("{}: {}", username, msg_split.1);
                 // send message to all clients
-                users = users.into_iter().filter_map(|mut user| {
-                    if user.id == msg_split.0.parse().unwrap() {
-                        // we dont want to send the message back to the sender, just ignore it.
-                        Some(user)
-                    } else {
-                        let mut msg_buff = correct_msg.clone().into_bytes();
-                        // add zero character to mark end of message
-                        msg_buff.resize(MSG_SIZE, 0);
-                        user.client.write_all(&msg_buff).map(|_| user).ok()
-                    }
-                })
-                .collect::<Vec<_>>();
-            }     
+                users = users
+                    .into_iter()
+                    .filter_map(|mut user| {
+                        if user.id == msg_split.0.parse().unwrap() {
+                            // we dont want to send the message back to the sender, just ignore it.
+                            Some(user)
+                        } else {
+                            let mut msg_buff = correct_msg.clone().into_bytes();
+                            // add zero character to mark end of message
+                            msg_buff.resize(MSG_SIZE, 0);
+                            user.client.write_all(&msg_buff).map(|_| user).ok()
+                        }
+                    })
+                    .collect::<Vec<_>>();
+            }
         }
         // so this is also a cleaner ^^
         // it tries to send messages to clients, if there is an error (when writing) the error is turned to a None
@@ -157,19 +163,28 @@ fn main() {
 
         sleep();
     }
-
 }
 
-fn handle_command(_users: &mut Vec<user::User>, index: usize, command: &str) {
+fn handle_command(
+    _users: &mut Vec<user::User>,
+    index: usize,
+    command: &str,
+    _file_contents: &mut String,
+) {
     let split_commands: Vec<&str> = command.split_whitespace().collect();
     match split_commands[0] {
         "/whisper" => {
             for _inner_index in 0.._users.len() {
                 if _users[_inner_index].username == split_commands[1] {
-                    let mut msg = format!("{} whispered: {}", _users[index].username, split_commands[2..split_commands.len()].join(" ")).into_bytes();
+                    let mut msg = format!(
+                        "{} whispered: {}",
+                        _users[index].username,
+                        split_commands[2..split_commands.len()].join(" ")
+                    )
+                    .into_bytes();
                     msg.resize(MSG_SIZE, 0);
                     _users[_inner_index].client.write_all(&msg);
-                    return ;
+                    return;
                 }
             }
             let mut msg = String::from("Couldn't find user.").into_bytes();
@@ -189,43 +204,42 @@ fn handle_command(_users: &mut Vec<user::User>, index: usize, command: &str) {
         "/login" => {
             if index >= _users.len() {
                 println!("SERVER: ABORT COMMAND");
-                return ;
+                return;
             }
             let mut message = {
-                if account_exists(split_commands[1], split_commands[2]).1 {
-                    _users[index].username = split_commands[1].to_string();   
-                    format!("Welcome back {}", _users[index].username) 
+                if account_exists(&_file_contents, split_commands[1], split_commands[2]).1 {
+                    _users[index].username = split_commands[1].to_string();
+                    format!("Welcome back {}", _users[index].username)
                 } else {
                     "Log in failed. Incorrect username/password.".to_string()
                 }
-            }.into_bytes();
+            }
+            .into_bytes();
             message.resize(MSG_SIZE, 0);
             _users[index].client.write_all(&message);
         }
         "/create" => {
             if index >= _users.len() {
                 println!("SERVER: ABORT COMMAND");
-                return ;
+                return;
             }
             let mut message = {
-                if account_exists(split_commands[1], "NaN").0 { 
-                    "Account already exists".to_string() 
+                if account_exists(&_file_contents, split_commands[1], "NaN").0 {
+                    "Account already exists".to_string()
                 } else {
-                    if create_user(split_commands[1], split_commands[2]){
-                        _users[index].username = split_commands[1].to_string();
-                        format!("Welcome {}. Account created.", _users[index].username)
-                    } else {
-                        "Creation failed. Try again.".to_string()
-                    }
+                    create_user(_file_contents, split_commands[1], split_commands[2]);
+                    _users[index].username = split_commands[1].to_string();
+                    format!("Welcome {}. Account created.", _users[index].username)
                 }
-            }.into_bytes();
+            }
+            .into_bytes();
             message.resize(MSG_SIZE, 0);
             _users[index].client.write_all(&message);
         }
         "/ping" => {
             if index >= _users.len() {
                 println!("SERVER: ABORT COMMAND");
-                return ;
+                return;
             }
             let mut pong = "pong".to_string().into_bytes();
             pong.resize(MSG_SIZE, 0);
@@ -234,15 +248,20 @@ fn handle_command(_users: &mut Vec<user::User>, index: usize, command: &str) {
         "/aboutme" => {
             if index >= _users.len() {
                 println!("SERVER: ABORT COMMAND");
-                return ;
+                return;
             }
-            let mut msg = format!("Username: {}, ID: {}", _users[index].username, _users[index].id).into_bytes();
+            let mut msg = format!(
+                "Username: {}, ID: {}",
+                _users[index].username, _users[index].id
+            )
+            .into_bytes();
             msg.resize(MSG_SIZE, 0);
             _users[index].client.write_all(&msg);
         }
         "/stop" => {
             //server wants to shutdown
             println!("SERVER: Shutting down...");
+            save_file_data(&_file_contents);
             let mut msg = String::from("Server is closing. No messages will be sent.").into_bytes();
             msg.resize(MSG_SIZE, 0);
             for _user in _users {
@@ -251,58 +270,58 @@ fn handle_command(_users: &mut Vec<user::User>, index: usize, command: &str) {
             thread::sleep(std::time::Duration::from_secs(1));
             std::process::exit(0);
         }
-        _ => println!("SERVER: Something went wrong. We need to uptade our list of commands.")
+        _ => println!("SERVER: Something went wrong. We need to uptade our list of commands."),
     }
 }
 
-fn is_command(command : &str) -> bool {
+//we need to check if the input in server is a command. All commands from clients are already checked client side.
+fn is_command(command: &str) -> bool {
     match command {
         "stop" => true,
-        _ => false
+        _ => false,
     }
-    
 }
 
 /**
  * Returns a tuple
- * 
+ *
  * (true, true) if account exists and password is correct
- * 
+ *
  * (true, false) if account only exists
- * 
+ *
  */
-fn account_exists(_username: &str, _password: &str) -> (bool, bool) {
-    if let Some(contents) = std::fs::read_to_string(FILE_OF_USERS).ok() {
-
-        for line in contents.lines() {
-            for subsection in line.split(';') {
-                let (field, value) = subsection.split_once('=').unwrap_or(("0", "0"));
-                if field == "username" && value == _username{
-                    //found the correct user check for password of this user
-                    for sub in line.split(';') {
-                        let (f, v) = sub.split_once('=').unwrap_or(("0", "0"));
-                        if f == "password" && v == _password {
-                            return (true, true);
-                        }
+fn account_exists(_file: &str, _username: &str, _password: &str) -> (bool, bool) {
+    for line in _file.lines() {
+        for subsection in line.split(';') {
+            let (field, value) = subsection.split_once('=').unwrap_or(("0", "0"));
+            if field == "username" && value == _username {
+                //found the correct user check for password of this user
+                for sub in line.split(';') {
+                    let (f, v) = sub.split_once('=').unwrap_or(("0", "0"));
+                    if f == "password" && v == _password {
+                        return (true, true);
                     }
-                    return (true, false);
                 }
-                    
+                return (true, false);
             }
         }
     }
-
     (false, false)
 }
 
-fn create_user(_username: &str, _password: &str) -> bool {
-    if let Some(mut file) = std::fs::OpenOptions::new().append(true).create(true).open(FILE_OF_USERS).ok() {
-        let line = format!("\nusername={};password={}", _username, _password);
-        let line_utf = line.as_bytes();
-        if file.write_all(line_utf).is_err() {
-            return false;
-        }
-        return true;
-    }
-    false
+//adding the user to the string that contains the users.
+fn create_user(_file_contents: &mut String, _username: &str, _password: &str) {
+    let line = format!("\nusername={};password={}", _username, _password);
+    _file_contents.push_str(&line);
+}
+
+//Outsourcing to make readable.
+fn load_file_data_to_string() -> String {
+    std::fs::read_to_string(FILE_OF_USERS).unwrap_or("NaN".to_string())
+}
+
+//writing the "global" string to a file.
+fn save_file_data(_file_contents: &str) {
+    let mut file = std::fs::File::create(FILE_OF_USERS).unwrap();
+    file.write_all(_file_contents.as_bytes());
 }
